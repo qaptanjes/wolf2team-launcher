@@ -1,0 +1,10 @@
+# Move to .github/workflows/build.yml (via GitHub web UI) to enable CI.
+name: build
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File ops\build-setup.ps1 -TestsOnly

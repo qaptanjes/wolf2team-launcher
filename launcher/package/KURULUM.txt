@@ -1,0 +1,28 @@
+WolfTeam Diriliş - kurulum ve oynama
+====================================
+
+Kolay yol (önerilen)
+1. wolf2team.com İndir sayfasından WolfTeamDirilis-Setup.exe dosyasını indir ve çalıştır.
+2. Adımları izle. Önerilen klasör: C:\Oyunlar\WolfTeam Dirilis (yönetici izni gerekmez).
+3. Masaüstündeki "WolfTeam Diriliş" kısayoluna tıkla. Başlatıcı ilk açılışta oyun dosyalarını
+   indirir (yaklaşık 2 GB). "Güncelleme tamamlandı" yazınca OYUNU BAŞLAT düğmesi açılır.
+4. Sitedeki kullanıcı adın ve şifrenle giriş yap. Hesabın yoksa wolf2team.com adresinden kayıt ol.
+
+Elle kurulum (zip ile)
+1. Zip'i boş bir klasöre çıkar, örneğin C:\Oyunlar\WolfTeam Dirilis.
+   Masaüstü, Belgeler, OneDrive ve Program Files klasörlerinden kaçın.
+2. Klasördeki WolfTeamDirilis.exe dosyasını çalıştır (istersen masaüstüne kısayolunu koy).
+   Başlatıcı eksik ya da değişmiş dosyaları kendisi indirir.
+
+Kaldırmak
+Ayarlar > Uygulamalar > WolfTeam Diriliş > Kaldır. Elle kurduysan klasörü silmen yeterli.
+
+Sorun olursa
+- Windows "Bilinmeyen yayıncı" ya da SmartScreen uyarısı verirse: dosyayı wolf2team.com'dan
+  indirdiysen "Ek bilgi" > "Yine de çalıştır" de. Programlarımız imzasız olduğu için bu uyarı çıkar.
+- "Güncelleme yarım kaldı": internetini kontrol edip başlatıcıdaki "Tekrar dene"ye bas.
+  İndirme kaldığı yerden devam eder.
+- "Sunucuya bağlanılamadı": internetini ve güvenlik duvarını kontrol et; sunucu kapalı olabilir.
+- Oyun açılmazsa başlatıcıyı kapatıp yeniden aç; dosyalar yeniden kontrol edilir.
+
+Şifreni başka yerde kullanma: başlatıcı, eski oyunla uyum için girişi şifrelenmemiş bağlantıyla gönderir.

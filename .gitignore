@@ -1,0 +1,10 @@
+# client-derived assets (copyright) and secrets never belong here
+assets/
+*.pfx
+*.snk
+WolfTeamDirilis.ini
+endpoints.ini
+secret*.txt
+*.exe
+bg.png
+wt.ico
