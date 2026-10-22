@@ -18,7 +18,11 @@ namespace WolfTeamDirilis
 {
     internal sealed class LauncherConfig
     {
+#if SIGNPATH_PREPARATION
+        public const string DefaultServerHost = "build-only.invalid";
+#else
         public const string DefaultServerHost = "188.40.176.195";
+#endif
         /// <summary>The game server's address until 2026-10-02 (dead since the move); a ServerHost with this value is ignored.</summary>
         public const string RetiredServerHost = "45.76.145.60";
         public const string FileName = "WolfTeamDirilis.ini"; // not "launcher.ini": the client already ships its own Launcher.ini

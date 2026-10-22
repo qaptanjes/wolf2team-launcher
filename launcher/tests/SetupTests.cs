@@ -17,7 +17,14 @@ namespace WolfTeamDirilis.Tests
         private static int Main(string[] args)
         {
             if (args.Length == 2 && args[0] == "--screenshots") return SetupScreens.Render(args[1]);
-            return Runner.Run(typeof(SetupTests));
+            // General fixtures use Turkish paths; refusal tests supply their own explicit code page.
+            string previous = Environment.GetEnvironmentVariable(BootLayout.AnsiCodePageTestVariable);
+            try
+            {
+                Environment.SetEnvironmentVariable(BootLayout.AnsiCodePageTestVariable, "1254");
+                return Runner.Run(typeof(SetupTests));
+            }
+            finally { Environment.SetEnvironmentVariable(BootLayout.AnsiCodePageTestVariable, previous); }
         }
     }
 

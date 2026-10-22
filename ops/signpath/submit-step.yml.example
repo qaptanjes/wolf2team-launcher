@@ -1,0 +1,16 @@
+# DOCUMENTATION ONLY. This is not a workflow and cannot run from .github/workflows/.
+# Use only after policy/license/security approval and protected-environment setup.
+# Upload the approved stage-specific artifact in THIS trusted workflow run first.
+- name: Submit approved launcher artifact
+  uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3 tag, verified 2026-10-22
+  with:
+    api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+    organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
+    project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+    signing-policy-slug: '${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}'
+    artifact-configuration-slug: launcher-artifacts
+    github-artifact-id: '${{ steps.upload_approved_launcher.outputs.artifact-id }}'
+    wait-for-completion: true
+    output-artifact-directory: approved-signed-launcher
+# Verify signatures and provenance; package signed inputs and test the installer separately.
+# Submit that stage's GitHub artifact ID with artifact-configuration-slug: installer-artifact.

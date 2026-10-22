@@ -8,3 +8,8 @@ secret*.txt
 *.exe
 bg.png
 wt.ico
+
+# Local build output and deliberately non-operational preparation fixtures
+/build/
+!/launcher/signpath/WolfTeamDirilis.ini
+!/launcher/signpath/endpoints.ini
