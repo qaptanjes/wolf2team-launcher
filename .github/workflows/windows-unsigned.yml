@@ -1,0 +1,56 @@
+name: Windows unsigned preparation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/signpath-*']
+    paths: ['launcher/**', 'ops/**', '.github/workflows/windows-unsigned.yml', 'CODE_SIGNING_POLICY.md']
+  pull_request:
+    paths: ['launcher/**', 'ops/**', '.github/workflows/windows-unsigned.yml', 'CODE_SIGNING_POLICY.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-unsigned-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile, test and inspect unsigned outputs
+        run: ./ops/build-signpath.ps1
+      - name: Upload unsigned preparation artifacts
+        id: unsigned
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wolfteam-unsigned-preparation-${{ github.sha }}
+          path: build/signpath/unsigned/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload build test logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wolfteam-preparation-test-logs-${{ github.sha }}
+          path: build/signpath/logs/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Record signing boundary
+        run: |
+          @'
+          ### Unsigned preparation only
+          Built bootstrap, launcher and installer from this run's source commit.
+          No game client, proprietary artwork, production endpoints or pre-existing EXEs were packaged.
+          No SignPath request, Authenticode signature, release publication or deployment was performed.
+          See CODE_SIGNING_POLICY.md and build-report.json for outstanding approval requirements.
+          '@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

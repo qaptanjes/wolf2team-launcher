@@ -18,8 +18,14 @@ namespace WolfTeamDirilis.Setup
         /// <summary>The bootstrap the shortcut starts, the launcher it runs (launcher\csharp\BootLayout.cs), and the rest.</summary>
         /// <summary>In install order: the launcher and its addresses first, the bootstrap (the shortcut's exe) last, so a
         /// setup stopped halfway leaves the old exe working (Codex 1.4 round 4).</summary>
+#if SIGNPATH_PREPARATION
+        // Source-only CI qualification: do not embed or require artwork extracted from the game.
+        public static readonly string[] Names = { "launcher\\WolfTeamLauncher.exe", "WolfTeamDirilis.ini", "KURULUM.txt",
+                                                  "WolfTeamDirilis.exe" };
+#else
         public static readonly string[] Names = { "launcher\\WolfTeamLauncher.exe", "bg.png", "WolfTeamDirilis.ini", "KURULUM.txt",
                                                   "WolfTeamDirilis.exe" };
+#endif
         /// <summary>The HTTPS addresses (security audit R5): the launcher updates only over HTTPS.</summary>
         public const string Endpoints = "launcher\\endpoints.ini";
         private readonly Dictionary<string, byte[]> files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);

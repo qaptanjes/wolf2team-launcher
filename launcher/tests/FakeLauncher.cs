@@ -33,8 +33,17 @@ namespace WolfTeamDirilis.Tests
             if (gameDir == null) gameDir = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
             if (gameDir != null)
             {
-                try { File.AppendAllText(Path.Combine(gameDir, "fake-log.txt"), mode + " " + string.Join(" ", args) + "\n"); }
-                catch (IOException) { }
+                // The observing test reads this file while the child starts. Do not silently lose
+                // the handshake when its read handle temporarily prevents an append.
+                for (int attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        File.AppendAllText(Path.Combine(gameDir, "fake-log.txt"), mode + " " + string.Join(" ", args) + "\n");
+                        break;
+                    }
+                    catch (IOException) { if (attempt >= 19) throw; Thread.Sleep(100); }
+                }
             }
             if (mode == "crash") return 3;
             int stay = 20000;

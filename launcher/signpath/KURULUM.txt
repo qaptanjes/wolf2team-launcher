@@ -1,0 +1,10 @@
+WOLFTEAM DIRILIS - UNSIGNED SIGNPATH PREPARATION
+
+This package is for isolated build and installer testing only.
+It is not a player release and contains no game client or game assets.
+The default and bundled service addresses use the reserved .invalid domain.
+Do not install over an existing game, configure production endpoints,
+publish these files to players, or bypass Windows security warnings.
+No executable in this package is signed or approved for signing.
+
+See CODE_SIGNING_POLICY.md and build-report.json in the source/artifact bundle.

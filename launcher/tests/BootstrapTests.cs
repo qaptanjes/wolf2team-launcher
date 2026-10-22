@@ -526,6 +526,7 @@ namespace WolfTeamDirilis.Tests
                 tr.EnvironmentVariables["WOLFTEAM_BOOT_TEST_TIMEOUTS"] = Timeouts;
                 tr.EnvironmentVariables["WT_FAKE_STAY_MS"] = "1500";
                 tr.EnvironmentVariables[BootLayout.AnsiCodePageTestVariable] = "1254";
+                tr.EnvironmentVariables["WOLFTEAM_BOOT_TEST_NODIALOG"] = "1";
                 using (Process p = Process.Start(tr))
                 {
                     Assert.True(p.WaitForExit(60000), "ends");
@@ -629,6 +630,9 @@ namespace WolfTeamDirilis.Tests
             ProcessStartInfo psi = new ProcessStartInfo(BootLayout.BootstrapPath(install), "");
             psi.UseShellExecute = false;
             psi.WorkingDirectory = install;
+            // These fixtures deliberately contain Turkish characters. Locale refusal is tested separately.
+            psi.EnvironmentVariables[BootLayout.AnsiCodePageTestVariable] = "1254";
+            psi.EnvironmentVariables["WOLFTEAM_BOOT_TEST_NODIALOG"] = "1";
             psi.EnvironmentVariables["WOLFTEAM_BOOT_TEST_TIMEOUTS"] = Timeouts;
             psi.EnvironmentVariables["WT_FAKE_STAY_MS"] = stayMs.ToString();
             return Process.Start(psi);
@@ -684,7 +688,33 @@ namespace WolfTeamDirilis.Tests
                 if (n >= count) return;
                 Thread.Sleep(100);
             }
-            throw new TestFailure("no '" + prefix + "' start seen");
+            string log = Path.Combine(BootLayout.LauncherDir(install), "bootstrap.log");
+            throw new TestFailure("no '" + prefix + "' start seen; bootstrap log: " +
+                (File.Exists(log) ? File.ReadAllText(log) : "missing"));
+        }
+
+        public static void TestFakeLauncherDoesNotLoseItsLogWhenAReaderHoldsTheFile()
+        {
+            string d = Runner.TempDir("fake-log-lock");
+            try
+            {
+                string log = Path.Combine(d, "fake-log.txt");
+                File.WriteAllText(log, "");
+                ProcessStartInfo psi = new ProcessStartInfo(FakeExe, BootLayout.GameDirFlag + " \"" + d + "\"");
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.EnvironmentVariables["WT_FAKE_STAY_MS"] = "300";
+                using (FileStream reader = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (Process child = Process.Start(psi))
+                {
+                    Thread.Sleep(750);
+                    reader.Dispose();
+                    Assert.True(child.WaitForExit(10000), "fake launcher ends after reader releases the log");
+                    Assert.Equal(0, child.ExitCode, "fake launcher succeeded");
+                }
+                Assert.Equal(1, LogLines(d).Length, "handshake log is not silently dropped");
+            }
+            finally { Runner.DeleteTree(d); }
         }
 
         public static void TestRealProcessesConfirmRollBackAndRecover()
@@ -801,7 +831,7 @@ namespace WolfTeamDirilis.Tests
             {
                 byte[] v1 = Version("ok"), hang = Version("hang");
                 Stage(d, v1);
-                RunBoot(d, 1500);
+                Assert.Equal(0, RunBoot(d, 1500), "initial launcher confirmed before kill test");
                 Stage(d, hang);
                 using (Process boot = StartBoot(d, 60000))
                 {
@@ -846,6 +876,8 @@ namespace WolfTeamDirilis.Tests
                 ProcessStartInfo psi = new ProcessStartInfo(BootLayout.BootstrapPath(d), "--selftest");
                 psi.UseShellExecute = false;
                 psi.RedirectStandardOutput = true;
+                psi.EnvironmentVariables[BootLayout.AnsiCodePageTestVariable] = "1254";
+                psi.EnvironmentVariables["WOLFTEAM_BOOT_TEST_NODIALOG"] = "1";
                 psi.EnvironmentVariables["WOLFTEAM_BOOT_TEST_TIMEOUTS"] = Timeouts;
                 psi.EnvironmentVariables["WT_FAKE_STAY_MS"] = "300";
                 using (Process p = Process.Start(psi))
@@ -877,6 +909,7 @@ namespace WolfTeamDirilis.Tests
                 psi.EnvironmentVariables["WOLFTEAM_BOOT_TEST_TIMEOUTS"] = Timeouts;
                 psi.EnvironmentVariables["WOLFTEAM_BOOT_TEST_NODIALOG"] = "1";
                 psi.EnvironmentVariables["WT_FAKE_STAY_MS"] = "1500";
+                psi.EnvironmentVariables[BootLayout.AnsiCodePageTestVariable] = "1254";
                 using (Process p = Process.Start(psi)) Assert.True(p.WaitForExit(60000) && p.ExitCode == 1, "nothing to start");
                 System.Threading.Thread.Sleep(1000);
                 foreach (string l in LogLines(d)) Assert.False(l.StartsWith("legacy"), "the 1.2 copy never ran: " + l);
