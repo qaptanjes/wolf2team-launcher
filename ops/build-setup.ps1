@@ -18,18 +18,20 @@ param(
     [string]$IniFile = 'C:\tools\re\dist\WolfTeam\WolfTeamDirilis.ini',
     [string]$OutDir = 'C:\tools\re\out\setup',
     [string]$BuildDir = (Join-Path $env:TEMP 'wolfteam-setup-build'),
-    # launcher\endpoints.ini for the setup (https UpdateBaseUrl required, LoginUrl/NewsUrl optional; never printed). The
+    # launcher\endpoints.ini for the setup (https LoginUrl/UpdateBaseUrl required, NewsUrl optional; never printed). The
     # launcher updates only over HTTPS, so a setup without it could not update. An optional ServerHost=<host or IPv4>
     # line (launcher 1.6.1+) sets the game server the status badge probes.
     [string]$EndpointsFile = '',
-    # Ship without an https LoginUrl (the login then asks every player before sending the password over http). Only
-    # until the HTTPS login route is live (security audit R5).
+    # Deprecated, retained only to fail old invocations explicitly before building anything.
     [switch]$AllowHttpLogin,
     [switch]$TestsOnly
 )
 $ErrorActionPreference = 'Stop'
+if ($AllowHttpLogin) { throw 'HTTP login is no longer supported; supply HTTPS LoginUrl in -EndpointsFile.' }
 $repo = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'endpoint-url.ps1')
+$epLines = @()
+if (-not $TestsOnly) { $epLines = @(Read-LauncherReleaseEndpoints $EndpointsFile) }
 $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) { throw "required compiler not found: $csc" }
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
@@ -74,6 +76,7 @@ if ($setupSrc) {
     if ($LASTEXITCODE -ne 0) { throw 'setup tests failed' }
 }
 & (Join-Path $PSScriptRoot 'test-endpoint-url.ps1')
+& (Join-Path $PSScriptRoot 'test-release-endpoints.ps1')
 if ($TestsOnly) { Write-Output 'tests passed'; return }
 
 # ---- launcher ----------------------------------------------------------------------------------------------------
@@ -105,25 +108,6 @@ if ($iniText.Contains($RetiredServerHost)) {
 }
 $iniCopy = Join-Path $BuildDir 'WolfTeamDirilis.ini'
 Copy-Item -LiteralPath $IniFile -Destination $iniCopy -Force
-if (-not $EndpointsFile -or -not (Test-Path -LiteralPath $EndpointsFile -PathType Leaf)) { throw 'endpoints file missing (-EndpointsFile; the launcher updates only over HTTPS)' }
-$epLines = @()
-foreach ($key in @('LoginUrl', 'UpdateBaseUrl', 'NewsUrl')) {
-    $l = Get-Content -LiteralPath $EndpointsFile | Where-Object { $_ -match "^\s*$key\s*=" } | Select-Object -First 1
-    if (-not $l) {
-        if ($key -eq 'UpdateBaseUrl') { throw 'UpdateBaseUrl missing in the endpoints file' }
-        if ($key -eq 'LoginUrl' -and -not $AllowHttpLogin) { throw 'LoginUrl (https) missing in the endpoints file; -AllowHttpLogin ships the consent-only http login' }
-        continue
-    }
-    $v = ($l -split '=', 2)[1].Trim()
-    if (-not (Test-HttpsEndpointUrl $v)) { throw "$key is not a plain, valid https URL (value not shown)" }
-    $epLines += "$key=$v"
-}
-$hostLine = Get-Content -LiteralPath $EndpointsFile | Where-Object { $_ -match '^\s*ServerHost\s*=' } | Select-Object -First 1
-if ($hostLine) {
-    $v = ($hostLine -split '=', 2)[1].Trim()
-    if (-not (Test-ServerHost $v)) { throw "ServerHost in the endpoints file is not a valid, current host name or IPv4 address (value not shown)" }
-    $epLines += "ServerHost=$v"
-}
 $epCopy = Join-Path $BuildDir 'endpoints.ini'
 [System.IO.File]::WriteAllText($epCopy, "; HTTPS addresses of the WolfTeam Dirilis launcher (security audit R5).`r`n" + ($epLines -join "`r`n") + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
 

@@ -42,8 +42,7 @@ Content-Length için yakalanan IOException kullanması önerisi uygulandı.
 
 1. `MainForm` içindeki eski şifresiz giriş onayını kaldırıp, güvenli hata
    mesajıyla eşleştirmek; klavye ve mesaj görünürlüğünü kontrol etmek.
-2. Kurulum betiğindeki `AllowHttpLogin` seçeneğini HTTPS gerekliliğiyle
-   uyumlu hale getirmek ve kurulum ayarlarının regresyonlarını çalıştırmak.
+2. Paketleme ön kontrolünün son kaynak için Windows CI sonucunu doğrulamak.
 3. Son kaynak için Windows CI ve imzasız hazırlık artifact kontrollerini
    tamamlamak; bu deponun hazırlık çıktıları oyuncu sürümü değildir.
 4. Canlı launcher dağıtımı ayrı doğrulanmalı; mevcut oyuncu kurulumları
@@ -52,5 +51,37 @@ Content-Length için yakalanan IOException kullanması önerisi uygulandı.
 
 `main`, canlı kurulum, oyun binary'si ve kod imzalama bu dalda değiştirilmedi.
 Windows CI `jesus` push'larında da mevcut imzasız hazırlık akışını çalıştırır.
+
+## Paketleme ön kontrolü
+
+Her iki oyuncu paketleme betiği `AllowHttpLogin` seçeneğini açıkça reddeder.
+Kurulum üretimi ve `build-launcher.ps1 -PackageDir` çağrısı, dosya üretiminden
+önce ortak `Read-LauncherReleaseEndpoints` kontrolünden geçer. HTTPS
+`LoginUrl` ve `UpdateBaseUrl` zorunludur; `NewsUrl` ve `ServerHost` isteğe
+bağlıdır ve verilirse doğrulanır. Hatalar adresleri veya özel yolları yazmaz.
+`-TestsOnly` ve paket oluşturmayan launcher derlemesi üretim adresi istemez.
+
+15 sentetik kontrol iki gerçek betiğin ön kontrolünü, kaldırılan seçeneği ve
+adres ayrıştırmasını kapsar. Önceki betiklerin yalıtılmış kopyasında sekiz
+ön kontrol başarısız olur; yeni betiklerde 15 kontrol geçer. Testler gerçek
+oyun dosyası veya üretim kimlik bilgisi kullanmaz.
+
+Eski istemciler için ana INI üretiminin HTTP alanları bu değişiklikte
+korunmuştur; yeni paket zorunlu HTTPS `launcher/endpoints.ini` ile üretilir.
+Yeni launcher'ın `Net.Login` kontrolü uzak HTTP girişini ayrıca reddeder.
+Bu çalışma eski kurulumları güncellemiş veya sunucunun HTTP ucunu kapatmış
+sayılmaz.
+
+Haber adresinin eski HTTP geri dönüşü, ana INI'deki ortak indirme yolunu
+şifresiz taşıyabilir. Haber isteği parola taşımıyor olsa da bu yolun gizliliği
+sağlanmış değildir; HTTPS haber geçişi ayrı bir açık güvenlik işidir.
+
+Tam yerel kaynak testinde Launcher 62, Bootstrap 29, ConfigRepair 20, Setup
+36, endpoint 30 ve paketleme ön kontrolü 15: toplam 192 kontrol başarılıdır.
+İmzasız hazırlık raporunun kaynak listesine yeni ön kontrol testi de eklenir.
+
+Önceki kaynak `1020356` için Windows hazırlık CI koşusu
+[41572823795](https://github.com/qaptanjes/wolf2team-launcher/actions/runs/41572823795)
+başarılıdır; bu sonuç sonraki paketleme değişikliklerinin CI sonucu değildir.
 
 Başvuru: [OWASP TLS rehberi](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html).
