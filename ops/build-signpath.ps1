@@ -98,7 +98,8 @@ $artifacts = @($names | ForEach-Object {
         fileVersion = (Get-Item -LiteralPath $p).VersionInfo.FileVersion }
 })
 $sourceFiles = @(& git -C $repo ls-files -- LICENSE launcher ops/build-signpath.ps1 ops/test-signpath-artifacts.ps1 `
-    ops/build-setup.ps1 ops/build-launcher.ps1 ops/test-setup-smoke.ps1 ops/endpoint-url.ps1 ops/test-endpoint-url.ps1 .github/workflows/windows-unsigned.yml)
+    ops/build-setup.ps1 ops/build-launcher.ps1 ops/test-setup-smoke.ps1 ops/endpoint-url.ps1 ops/test-endpoint-url.ps1 `
+    ops/test-release-endpoints.ps1 .github/workflows/windows-unsigned.yml)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate source inputs' }
 $sources = @($sourceFiles | Sort-Object | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
@@ -117,7 +118,7 @@ $report = [ordered]@{
     builtAtUtc = [DateTime]::UtcNow.ToString('o'); runnerImage = $env:ImageVersion
     compiler = [ordered]@{ version = (Get-Item -LiteralPath $csc).VersionInfo.FileVersion;
         sha256 = (Get-FileHash -LiteralPath $csc -Algorithm SHA256).Hash.ToLowerInvariant() }
-    tests = @('Launcher/bootstrap/setup regression suites', 'Endpoint validation', 'Preparation endpoint isolation', 'Artifact/resource boundary', 'Isolated install/repair/uninstall')
+    tests = @('Launcher/bootstrap/setup regression suites', 'Endpoint validation', 'Release endpoint preflight', 'Preparation endpoint isolation', 'Artifact/resource boundary', 'Isolated install/repair/uninstall')
     artifacts = $artifacts; sources = $sources
 }
 [IO.File]::WriteAllText((Join-Path $unsigned 'build-report.json'), ($report | ConvertTo-Json -Depth 8), $utf8)

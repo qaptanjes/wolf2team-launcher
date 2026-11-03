@@ -37,7 +37,8 @@ namespace WolfTeamDirilis
         {
             try
             {
-                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
+                // Replace old runtime defaults; OR would keep SSL3/TLS 1.0/TLS 1.1 enabled.
+                ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072;
                 available = true;
             }
             catch (NotSupportedException) { available = false; }
@@ -76,15 +77,31 @@ namespace WolfTeamDirilis
             ServicePointManager.DefaultConnectionLimit = 8;
         }
 
-        /// <summary>POST user/pass to login.php exactly like the original loader (form fields, WolfLoader/1.0).</summary>
+        public const string InsecureLoginText = "Giriş adresi güvenli değil (HTTPS gerekli). Şifren gönderilmedi. "
+            + "Başlatıcıyı güncelle veya yöneticiye haber ver.";
+
+        /// <summary>POST user/pass only over HTTPS, with literal/local loopback allowed for development.</summary>
         public static LoginResult Login(string loginUrl, string user, string pass)
         {
             LoginResult r = new LoginResult();
+            Uri endpoint;
+            if (!Uri.TryCreate(loginUrl, UriKind.Absolute, out endpoint) || endpoint.UserInfo.Length != 0
+                || (endpoint.Scheme != Uri.UriSchemeHttps
+                    && !(endpoint.Scheme == Uri.UriSchemeHttp && endpoint.IsLoopback)))
+            {
+                r.Error = InsecureLoginText;
+                return r;
+            }
+            if (endpoint.Scheme == Uri.UriSchemeHttps && !Tls.Available)
+            {
+                r.Error = Tls.MissingText;
+                return r;
+            }
             byte[] body = Encoding.UTF8.GetBytes("user=" + Uri.EscapeDataString(user) + "&pass=" + Uri.EscapeDataString(pass));
             string text;
             try
             {
-                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(loginUrl);
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(endpoint);
                 req.Method = "POST";
                 req.UserAgent = "WolfLoader/1.0";
                 req.ContentType = "application/x-www-form-urlencoded";
@@ -189,7 +206,14 @@ namespace WolfTeamDirilis
 
         public static HttpWebRequest StaticRequest(string url, int timeoutMs)
         {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+            Uri endpoint;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out endpoint) || endpoint.UserInfo.Length != 0
+                || (endpoint.Scheme != Uri.UriSchemeHttps
+                    && !(endpoint.Scheme == Uri.UriSchemeHttp && endpoint.IsLoopback)))
+                throw new InvalidDataException("İndirme adresi güvenli değil (HTTPS gerekli). Adres yönetici tarafından güncellenmeli.");
+            if (endpoint.Scheme == Uri.UriSchemeHttps && !Tls.Available)
+                throw new InvalidDataException(Tls.MissingText);
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(endpoint);
             req.UserAgent = StaticUserAgent;
             req.Timeout = timeoutMs;
             req.ReadWriteTimeout = timeoutMs;

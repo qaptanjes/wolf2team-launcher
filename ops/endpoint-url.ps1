@@ -29,3 +29,31 @@ function ConvertTo-FourPartVersion([string]$Value) {
     while ($parts.Count -lt 4) { $parts += '0' }
     return ($parts -join '.')
 }
+
+# Validate a complete player release before either builder writes package files.
+# Login and updates require HTTPS; news and the game server override remain optional.
+function Read-LauncherReleaseEndpoints([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw 'endpoints file missing (-EndpointsFile; HTTPS LoginUrl and UpdateBaseUrl required)'
+    }
+    try { $source = @(Get-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop) }
+    catch { throw 'Cannot read endpoints file (path and values not shown)' }
+    $lines = @()
+    foreach ($key in @('LoginUrl', 'UpdateBaseUrl', 'NewsUrl')) {
+        $line = $source | Where-Object { $_ -match "^\s*$key\s*=" } | Select-Object -First 1
+        if (-not $line) {
+            if ($key -ne 'NewsUrl') { throw "$key (https) missing in the endpoints file" }
+            continue
+        }
+        $value = ($line -split '=', 2)[1].Trim()
+        if (-not (Test-HttpsEndpointUrl $value)) { throw "$key is not a plain, valid https URL (value not shown)" }
+        $lines += "$key=$value"
+    }
+    $hostLine = $source | Where-Object { $_ -match '^\s*ServerHost\s*=' } | Select-Object -First 1
+    if ($hostLine) {
+        $value = ($hostLine -split '=', 2)[1].Trim()
+        if (-not (Test-ServerHost $value)) { throw 'ServerHost is not a valid, current host name or IPv4 address (value not shown)' }
+        $lines += "ServerHost=$value"
+    }
+    return $lines
+}

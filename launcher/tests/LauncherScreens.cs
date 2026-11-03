@@ -75,6 +75,32 @@ namespace WolfTeamDirilis.Tests
                     Call(f, "OnUpdateFinished", "Önceki güncelleme yarım kaldı ve güncelleme listesi alınamadı. Oyun bu hâliyle açılamaz; "
                          + "bağlantını kontrol edip Tekrar dene'ye bas.", false, 0, false);
                 });
+                Shot(game, exe, Path.Combine(outDir, "launcher-7-guvensiz-giris-engellendi.png"), delegate(MainForm f)
+                {
+                    Call(f, "OnUpdateFinished", null, false, 105, false);
+                    Get<TextBox>(f, "userBox").Text = "fixture-user";
+                    TextBox password = Get<TextBox>(f, "passBox");
+                    foreach (Keys key in new Keys[] { Keys.Enter, Keys.Space })
+                    {
+                        password.Text = "fixture-password";
+                        Control input = key == Keys.Enter ? (Control)password : Get<StartButton>(f, "start");
+                        input.Select();
+                        Assert.True(f.ActiveControl == input, "shortcut starts at its input control");
+                        Type type = key == Keys.Enter ? typeof(Control) : typeof(SkinControl);
+                        KeyEventArgs args = new KeyEventArgs(key);
+                        type.GetMethod("OnKeyDown", Any).Invoke(input, new object[] { args });
+                        Assert.True(args.Handled, "login shortcut handled");
+                        Assert.Equal("", password.Text, "blocked login clears the password");
+                        MessageStrip message = Get<MessageStrip>(f, "strip");
+                        Assert.Equal(Net.InsecureLoginText, message.Text, "safe error shown");
+                        Assert.Equal(message.Text, message.AccessibleName, "error available to accessibility clients");
+                        Assert.True(f.ActiveControl == password, "focus returns to password");
+                    }
+                });
+                Shot(game, exe, Path.Combine(outDir, "launcher-8-tls-gerekli.png"), delegate(MainForm f)
+                {
+                    Call(f, "OnLoginFinished", "fixture-user", new LoginResult { Ok = false, Error = Tls.MissingText });
+                });
                 Console.WriteLine("screenshots written to " + outDir);
                 return 0;
             }

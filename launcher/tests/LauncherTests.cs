@@ -30,6 +30,206 @@ namespace WolfTeamDirilis.Tests
 
     public static class LauncherTests
     {
+        public static void TestTlsEnableRemovesInheritedLegacyProtocols()
+        {
+            System.Net.SecurityProtocolType previous = System.Net.ServicePointManager.SecurityProtocol;
+            bool wasAvailable = Tls.Available;
+            try
+            {
+                // SSL3 (48), TLS 1.0 (192), TLS 1.1 (768): old runtime defaults must not survive initialization.
+                System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)1008;
+                Tls.Enable();
+                Assert.True(Tls.Available, "TLS 1.2 supported on this test runtime");
+                int protocols = (int)System.Net.ServicePointManager.SecurityProtocol;
+                Assert.Equal(0, protocols & 1008, "no legacy protocol offered by subsequent requests");
+                Assert.Equal(3072, protocols & 3072, "TLS 1.2 remains enabled");
+            }
+            finally
+            {
+                System.Net.ServicePointManager.SecurityProtocol = previous;
+                Tls.SetForTests(wasAvailable);
+            }
+        }
+
+        private sealed class LoginRequestProbe : System.Net.IWebRequestCreate
+        {
+            public int Calls;
+            public System.Net.WebRequest Create(Uri uri)
+            {
+                Calls++;
+                throw new InvalidOperationException("request creation probe");
+            }
+        }
+
+        public static void TestHttpLoginNeverCreatesARequest()
+        {
+            string url = "http://login-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "probe registered");
+            LoginResult result = null;
+            try { result = Net.Login(url, "fixture", "fixture-password"); }
+            catch (InvalidOperationException) { }
+            Assert.Equal(0, probe.Calls, "no request before refusing plaintext credentials");
+            Assert.True(result != null && !result.Ok && result.Token == null, "safe failure");
+            Assert.True(result.Error.Contains("HTTPS"), "actionable Turkish error");
+        }
+
+        public static void TestHttpsLoginWithoutTlsNeverCreatesARequest()
+        {
+            string url = "https://login-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "probe registered");
+            Tls.SetForTests(false);
+            try
+            {
+                LoginResult result = null;
+                try { result = Net.Login(url, "fixture", "fixture-password"); }
+                catch (InvalidOperationException) { }
+                Assert.Equal(0, probe.Calls, "no request without supported TLS");
+                Assert.True(result != null && !result.Ok && result.Token == null, "safe failure");
+                Assert.Equal(Tls.MissingText, result.Error, "TLS repair message");
+            }
+            finally { Tls.SetForTests(true); }
+        }
+
+        public static void TestInvalidLoginAddressesReturnAnErrorBeforeIo()
+        {
+            foreach (string url in new string[] { null, "", "/relative", "mailto:fixture@example.invalid", "ftp://127.0.0.1/x" })
+            {
+                LoginResult result = null;
+                try { result = Net.Login(url, "fixture", "fixture-password"); }
+                catch (Exception) { }
+                Assert.True(result != null && !result.Ok && result.Token == null && !string.IsNullOrEmpty(result.Error),
+                    "invalid endpoint fails without throwing or creating an I/O request");
+            }
+        }
+
+        public static void TestLoginUserInfoIsRejectedBeforeRequestCreation()
+        {
+            foreach (string host in new string[] { "https://userinfo-probe.invalid/", "http://127.0.0.1:9/" })
+            {
+                string url = host.Replace("://", "://fixture:marker@") + Guid.NewGuid().ToString("N") + "/";
+                LoginRequestProbe probe = new LoginRequestProbe();
+                Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "userinfo probe registered");
+                // Calibrate the exact URI seam without connecting anywhere. Removing the guard must hit this probe.
+                Assert.Throws<InvalidOperationException>(delegate { System.Net.WebRequest.Create(new Uri(url)); }, "probe intercepts URI");
+                Assert.Equal(1, probe.Calls, "calibration reached request factory");
+                probe.Calls = 0;
+                LoginResult result = Net.Login(url, "fixture", "fixture-password");
+                Assert.Equal(0, probe.Calls, "userinfo never reaches request factory");
+                Assert.True(!result.Ok && result.Token == null && result.Error.Contains("HTTPS"), "safe failure");
+            }
+        }
+
+        public static void TestLoopbackLoginStillUsesTheRealHttpPath()
+        {
+            using (TestHttpServer server = new TestHttpServer())
+            {
+                server.Files["/pub/login"] = Encoding.UTF8.GetBytes("{\"ok\":true,\"token\":\"0123456789abcdef0123456789abcdef\"}");
+                LoginResult result = Net.Login(server.BaseUrl + "login", "fixture user", "fixture+&password");
+                Assert.True(result.Ok, "loopback fixture login succeeds");
+                Assert.Equal("0123456789abcdef0123456789abcdef", result.Token, "response parsed");
+                Assert.True(server.Connections > 0, "real loopback connection exercised");
+                Assert.Equal("POST", server.LastMethod, "login method preserved");
+                Assert.Equal("user=fixture%20user&pass=fixture%2B%26password", server.LastBody, "credential form is encoded");
+            }
+        }
+
+        public static void TestDownloadsBlockPlaintextAndUserInfoBeforeRequestCreation()
+        {
+            foreach (string prefix in new string[] { "http://download-probe.invalid/", "https://fixture:marker@download-probe.invalid/", "http://fixture:marker@127.0.0.1:9/" })
+            {
+                string url = prefix + Guid.NewGuid().ToString("N") + "/SyntheticPrivatePath";
+                LoginRequestProbe probe = new LoginRequestProbe();
+                Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "download probe registered");
+                Assert.Throws<InvalidOperationException>(delegate { System.Net.WebRequest.Create(new Uri(url)); }, "exact URI intercepted");
+                probe.Calls = 0;
+                Exception failure = null;
+                try { Net.DownloadSmall(url, 1024, 1000); } catch (Exception e) { failure = e; }
+                Assert.Equal(0, probe.Calls, "unsafe download never creates a request");
+                Assert.True(failure is InvalidDataException, "controlled download rejection");
+                Assert.False(failure.Message.Contains("SyntheticPrivatePath") || failure.Message.Contains("marker"), "private values withheld");
+            }
+        }
+
+        public static void TestDownloadsWithoutTlsNeverCreateARequest()
+        {
+            string url = "https://tls-download-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "TLS download probe registered");
+            Tls.SetForTests(false);
+            try
+            {
+                Exception failure = null;
+                try { Net.DownloadSmall(url, 1024, 1000); } catch (Exception e) { failure = e; }
+                Assert.Equal(0, probe.Calls, "no download request without TLS support");
+                Assert.True(failure is InvalidDataException && failure.Message == Tls.MissingText, "controlled TLS failure");
+            }
+            finally { Tls.SetForTests(true); }
+        }
+
+        public static void TestInvalidDownloadAddressesFailSafely()
+        {
+            foreach (string url in new string[] { null, "", "/relative", "file:///C:/SyntheticPrivatePath", "ftp://127.0.0.1/SyntheticPrivatePath" })
+            {
+                Exception failure = null;
+                try { Net.StaticRequest(url, 1000); } catch (Exception e) { failure = e; }
+                Assert.True(failure is InvalidDataException, "unsupported address returns a controlled failure");
+                Assert.False(failure.Message.Contains("SyntheticPrivatePath"), "failure does not disclose the source");
+            }
+        }
+
+        public static void TestNewsAndThumbnailsCannotBypassTheDownloadGuard()
+        {
+            string url = "http://news-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "news probe registered");
+            Exception failure = null;
+            try { News.Fetch(url); } catch (Exception e) { failure = e; }
+            Assert.Equal(0, probe.Calls, "news never sends the private URL over HTTP");
+            Assert.True(failure is InvalidDataException, "news failure is controlled");
+            using (System.Drawing.Image image = News.FetchThumb(url))
+                Assert.True(image == null, "blocked thumbnail is omitted");
+            Assert.Equal(0, probe.Calls, "thumbnail never sends the private URL over HTTP");
+        }
+
+        public static void TestNewsImagesKeepTheSecureOrigin()
+        {
+            string source = "https://news.example.invalid/private/news.json";
+            Assert.Equal("https://news.example.invalid/private/images/a.png", News.ResolveImage(source, "images/a.png"), "relative image");
+            Assert.Equal("https://news.example.invalid/a.png", News.ResolveImage(source, "https://news.example.invalid:443/a.png"), "default HTTPS port");
+            foreach (string target in new string[] { "http://news.example.invalid/a.png", "https://news.example.invalid:444/a.png", "https://other.example.invalid/a.png", "https://fixture:marker@news.example.invalid/a.png", "file:///C:/a.png" })
+                Assert.True(News.ResolveImage(source, target) == null, "image outside secure origin omitted");
+            Assert.True(News.ResolveImage("http://news.example.invalid/private/news.json", "a.png") == null, "insecure news base rejected");
+            Assert.True(News.ResolveImage("https://fixture:marker@news.example.invalid/news.json", "a.png") == null, "userinfo base rejected");
+            Assert.Equal("http://127.0.0.1:8123/pub/a.png", News.ResolveImage("http://127.0.0.1:8123/pub/news.json", "a.png"), "loopback fixture origin");
+            Assert.True(News.ResolveImage("http://127.0.0.1:8123/pub/news.json", "http://127.0.0.1:8124/a.png") == null, "different loopback service rejected");
+        }
+
+        public static void TestSecureRequestsAndLoopbackNewsStillWork()
+        {
+            System.Net.HttpWebRequest request = Net.StaticRequest("https://news.example.invalid/private/news.json", 1234);
+            Assert.False(request.AllowAutoRedirect, "redirect cannot bypass origin policy");
+            Assert.Equal(1234, request.Timeout, "bounded request");
+            request.Abort(); // Request creation only; no public network connection.
+            using (TestHttpServer server = new TestHttpServer())
+            {
+                server.Files["/pub/news.json"] = Encoding.UTF8.GetBytes("[{\"title\":\"Duyuru\",\"date\":\"2026-11-03\",\"text\":\"Test\",\"image\":\"a.png\"}]");
+                using (System.Drawing.Bitmap bitmap = new System.Drawing.Bitmap(4, 4))
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                    server.Files["/pub/a.png"] = stream.ToArray();
+                }
+                List<NewsItem> items = News.Fetch(server.BaseUrl + "news.json");
+                Assert.Equal(1, items.Count, "real news response parsed");
+                Assert.Equal("Duyuru", items[0].Title, "news preserved");
+                using (System.Drawing.Image thumb = News.FetchThumb(items[0].ImageUrl))
+                    Assert.True(thumb != null && thumb.Width == 128 && thumb.Height == 72, "real thumbnail download decoded");
+                Assert.True(server.Connections > 0, "real loopback transport exercised");
+            }
+        }
+
         private static string Sha(byte[] b)
         {
             using (SHA256 s = SHA256.Create()) return Updater.ToHex(s.ComputeHash(b));
@@ -892,7 +1092,7 @@ namespace WolfTeamDirilis.Tests
                 Assert.Equal("https://example.org/a/launcher/login", c.LoginUrl, "https login");
                 Assert.Equal("https://example.org/d/client/", c.UpdateBaseUrl, "https update");
                 Assert.Equal("http://1.2.3.4:8080/s/news.json", c.NewsUrl, "an http value in endpoints.ini is ignored (no downgrade)");
-                Assert.False(c.TlsFallbackUsed || c.InsecureLogin, "no fallback, https login");
+                Assert.False(c.InsecureLogin, "https login");
             }
             finally { Tls.SetForTests(true); Runner.DeleteTree(dir); }
         }
@@ -1132,7 +1332,7 @@ namespace WolfTeamDirilis.Tests
             }
         }
 
-        public static void TestAnHttpLoginAddressAlwaysNeedsConsent()
+        public static void TestUnsafeLoginConfigurationIsFlagged()
         {
             // Gate 1.4 #1: an endpoints file with only an https update address leaves the login on http even with TLS 1.2.
             string dir = Runner.TempDir("httplogin");
@@ -1143,15 +1343,19 @@ namespace WolfTeamDirilis.Tests
                 WriteText(BootLayout.EndpointsPath(dir), "UpdateBaseUrl=https://example.org/d/client/\r\n");
                 LauncherConfig c = LauncherConfig.Load(dir, null);
                 Assert.Equal("http://1.2.3.4/api/login.php", c.LoginUrl, "login stays http");
-                Assert.False(c.TlsFallbackUsed, "not a TLS fallback");
-                Assert.True(c.InsecureLogin, "but the player is asked before the password is sent");
+                Assert.True(c.InsecureLogin, "plaintext login must be blocked");
                 WriteText(Path.Combine(dir, LauncherConfig.FileName), "LoginUrl=http://127.0.0.1:9/api/login.php\r\n");
-                Assert.False(LauncherConfig.Load(dir, null).InsecureLogin, "this PC (tests) needs no consent");
+                Assert.False(LauncherConfig.Load(dir, null).InsecureLogin, "local test transport allowed");
+                foreach (string address in new string[] { "https://fixture:marker@example.invalid/login", "ftp://127.0.0.1/login", "/relative", "", null })
+                {
+                    c.LoginUrl = address;
+                    Assert.True(c.InsecureLogin, "UI must flag every unsafe login endpoint");
+                }
             }
             finally { Runner.DeleteTree(dir); }
         }
 
-        public static void TestWithoutTlsLoginAndNewsFallBackButTheUpdateNever()
+        public static void TestWithoutTlsNoServiceMayFallBack()
         {
             string dir = Runner.TempDir("notls");
             try
@@ -1162,14 +1366,9 @@ namespace WolfTeamDirilis.Tests
                     + "UpdateBaseUrl=https://example.org/d/client/\r\nNewsUrl=https://example.org/d/news.json\r\n");
                 Tls.SetForTests(false);
                 LauncherConfig c = LauncherConfig.Load(dir, null);
-                Assert.Equal("http://1.2.3.4/api/login.php", c.LoginUrl, "login falls back (the player is told)");
-                Assert.Equal("http://1.2.3.4:8080/s/news.json", c.NewsUrl, "news falls back");
-                Assert.True(c.TlsFallbackUsed, "told");
-                Assert.True(c.InsecureLogin, "the password is not sent without the player's yes (MainForm.OnStart)");
-                LauncherLog.TlsFallback(c);
-                string log = File.ReadAllText(Path.Combine(BootLayout.LauncherDir(dir), "launcher.log"));
-                Assert.True(log.Contains("TLS 1.2 unavailable") && log.Contains("1.2.3.4:80"), "the fallback is logged: " + log);
-                Assert.False(log.Contains("/api/") || log.Contains("/s/"), "no URL path in the log");
+                Assert.Equal("https://example.org/a/launcher/login", c.LoginUrl, "login never downgrades");
+                Assert.Equal("https://example.org/d/news.json", c.NewsUrl, "news never downgrades");
+                Assert.False(c.InsecureLogin, "login keeps its secure endpoint");
                 Assert.Equal("https://example.org/d/client/", c.UpdateBaseUrl, "the update keeps https");
                 UpdateException e = Assert.Throws<UpdateException>(delegate { new Updater(c).FetchManifest(); }, "no update without TLS");
                 Assert.Equal(Tls.MissingText, e.Message, "the reason");
@@ -1261,6 +1460,8 @@ namespace WolfTeamDirilis.Tests
                     "Önceki güncelleme yarım kaldı ve güncelleme listesi alınamadı. Oyun bu hâliyle açılamaz; bağlantını kontrol edip Tekrar dene'ye bas.",
                     "Hesabın yasaklı (bitiş: 2026-10-01T10:00 UTC: hile ve küfür nedeniyle, itiraz için yöneticiye yaz).",
                     "Kullanıcı adını yaz.",
+                    Net.InsecureLoginText,
+                    Tls.MissingText,
                 };
                 foreach (string t in texts)
                 {

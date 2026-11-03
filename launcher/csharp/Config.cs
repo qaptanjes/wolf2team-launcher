@@ -2,9 +2,9 @@
 // the per-user settings file under %APPDATA%\WolfTeamDirilis.
 //
 // HTTPS (security audit F2/F3): an https LoginUrl / UpdateBaseUrl / NewsUrl from endpoints.ini (only https values are
-// taken from it) or from WolfTeamDirilis.ini wins over an http one. Without TLS 1.2 on the PC (Tls.Available false) the
-// login and the news fall back to the http address of WolfTeamDirilis.ini, and the player is told (TlsFallbackUsed); the
-// update never does: its list must come from an authentic source, so it fails instead (the offline rule still applies).
+// taken from it) or from WolfTeamDirilis.ini wins over an http one. No service downgrades when TLS is unavailable:
+// Net.Login and Net.StaticRequest refuse public HTTP before constructing requests. Updates retain their existing
+// offline-play rule. Legacy HTTP addresses remain readable but cannot be used for public network requests.
 //
 // ServerHost (the game server the status badge probes; launcher 1.6.1): endpoints.ini's ServerHost wins over the one in
 // WolfTeamDirilis.ini, then DefaultServerHost. The retired address RetiredServerHost (the server moved on 2026-10-02;
@@ -38,18 +38,15 @@ namespace WolfTeamDirilis
         public string HomeUrl;
         public string SupportUrl;
         public int GamePort = 40706;
-        /// <summary>The login or the news use their http address because this PC has no TLS 1.2 (MainForm tells the player).</summary>
-        public bool TlsFallbackUsed;
-        /// <summary>The login would go over plain HTTP - for any reason (no TLS 1.2 on this PC, or no https login address
-        /// configured yet): MainForm asks the player before every session's first login and never sends the password
-        /// without a "yes" (gate 1.4 #1: the decision follows the effective address, not why it was chosen).</summary>
+        /// <summary>An unsafe effective login address must be blocked before starting login. Local HTTP is for tests.</summary>
         public bool InsecureLogin
         {
             get
             {
                 Uri u;
                 if (!Uri.TryCreate(LoginUrl, UriKind.Absolute, out u)) return true;
-                return u.Scheme != Uri.UriSchemeHttps && !u.IsLoopback;
+                return u.UserInfo.Length != 0 || (u.Scheme != Uri.UriSchemeHttps
+                    && !(u.Scheme == Uri.UriSchemeHttp && u.IsLoopback));
             }
         }
 
@@ -95,16 +92,16 @@ namespace WolfTeamDirilis
                 if (Get(kv, "LoginUrl").Length > 0) c.Warnings.Add("LoginUrl geçersiz; varsayılan kullanılıyor.");
                 login = "http://" + c.ServerHost + "/api/login.php";
             }
-            c.LoginUrl = c.Pick(HttpsUrlOrNull(Get(ep, "LoginUrl")), login, true);
+            c.LoginUrl = HttpsUrlOrNull(Get(ep, "LoginUrl")) ?? login;
 
             string update = HttpUrlOrNull(Get(kv, "UpdateBaseUrl"));
             if (update == null && Get(kv, "UpdateBaseUrl").Length > 0) c.Warnings.Add("UpdateBaseUrl geçersiz; güncelleme kapalı.");
-            c.UpdateBaseUrl = c.Pick(HttpsUrlOrNull(Get(ep, "UpdateBaseUrl")), update, false);
+            c.UpdateBaseUrl = HttpsUrlOrNull(Get(ep, "UpdateBaseUrl")) ?? update;
             if (c.UpdateBaseUrl != null && !c.UpdateBaseUrl.EndsWith("/")) c.UpdateBaseUrl += "/";
 
             string news = HttpUrlOrNull(Get(kv, "NewsUrl"));
             if (news == null && Get(kv, "NewsUrl").Length > 0) c.Warnings.Add("NewsUrl geçersiz; duyurular kapalı.");
-            c.NewsUrl = c.Pick(HttpsUrlOrNull(Get(ep, "NewsUrl")), news, true);
+            c.NewsUrl = HttpsUrlOrNull(Get(ep, "NewsUrl")) ?? news;
 
             c.HomeUrl = HttpUrlOrNull(Get(kv, "HomeUrl"));
             c.SupportUrl = HttpUrlOrNull(Get(kv, "SupportUrl"));
@@ -138,20 +135,6 @@ namespace WolfTeamDirilis
                 return null;
             }
             return host;
-        }
-
-        /// <summary>The https address when there is one; without TLS 1.2 the http address of WolfTeamDirilis.ini if
-        /// {fallback} allows it (never for the update list).</summary>
-        private string Pick(string https, string ini, bool fallback)
-        {
-            if (https == null) return ini;
-            if (Tls.Available) return https;
-            if (fallback && ini != null && ini.StartsWith("http:", StringComparison.OrdinalIgnoreCase))
-            {
-                TlsFallbackUsed = true;
-                return ini;
-            }
-            return https;
         }
 
         /// <summary>"key=value" lines (';', '#' and '[' lines skipped); null when the file does not exist.</summary>
