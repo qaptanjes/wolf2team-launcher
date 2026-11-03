@@ -29,9 +29,9 @@ namespace WolfTeamDirilis
 {
     internal static class Program
     {
-        public const string Version = "1.6.1";
+        public const string Version = "1.6.2";
         /// <summary>Version padded to four parts: the version resource (ops\build-setup.ps1 checks that they match).</summary>
-        public const string FileVersion = "1.6.1.0";
+        public const string FileVersion = "1.6.2.0";
 
         [DllImport("kernel32.dll")]
         private static extern bool AttachConsole(int processId);

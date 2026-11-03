@@ -10,8 +10,8 @@ namespace WolfTeamDirilis.Setup
 {
     internal static class SetupInfo
     {
-        public const string Version = "1.6.1"; // same as the launcher it carries (Program.Version)
-        public const string FileVersion = "1.6.1.0"; // Version padded to four parts (SetupAssemblyInfo.cs)
+        public const string Version = "1.6.2"; // same as the launcher it carries (Program.Version)
+        public const string FileVersion = "1.6.2.0"; // Version padded to four parts (SetupAssemblyInfo.cs)
         public const string ProductName = "WolfTeam Diriliş";
         public const string Publisher = "WolfTeam Diriliş";
         public const string Website = "https://wolf2team.com";
