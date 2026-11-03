@@ -149,5 +149,33 @@ düzeltmesine uygulanmaz; entegrasyon girişindeki görev kapsamını koruma
 kuralı kullanıldı. Okunabilirlik ve ölçülmeyen kontrolü başarılı saymama
 ilkeleri uygulandı.
 
-Başvuru: [OWASP TLS rehberi](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html),
+## Eski TLS protokollerinin devreden çıkarılması
+
+Eski .NET ayarlarında SSL3, TLS 1.0 ve TLS 1.1 açıkken `Tls.Enable()`
+yalnız TLS 1.2 bayrağını ekliyordu. Böylece eski protokoller yeni bağlantılar
+için izin verilen kümede kalıyordu. Başlatıcı artık bu kümeyi TLS 1.2 ile
+değiştirir. Desteklenmeyen çalışma ortamındaki kapalı kalma davranışı ve
+Windows sertifika doğrulaması korunur; HTTP geri dönüşü yoktur.
+
+Regresyon, gerçek `ServicePointManager` ayarına üç eski protokolü yükler,
+başlatıcının başlatma yöntemini çağırır ve eski protokollerin kaldırılıp TLS 1.2'nin
+korunduğunu denetler. Önceki kaynakta `expected 0, got 1008` ile başarısız,
+düzeltmeyle başarılıdır. Global ayar ve kullanılabilirlik durumu `finally` ile
+geri yüklenir. Tam kaynak koşusu **199 başarılı, sıfır hata**: Launcher 69,
+Bootstrap 29, ConfigRepair 20, Setup 36, endpoint 30, paketleme ön kontrolü 15.
+Bağımsız salt okunur incelemede engelleyici bulgu yoktur.
+
+3 Kasım 2026 04:21 UTC'de güncel derlemenin gerçek `Net.Login` yolu ile
+yayındaki HTTPS giriş adresine boş kullanıcı adı/parola gönderildi. Beklenen
+kimlik doğrulama reddi alındı; oturum belirteci üretilmedi. Bu kontrol, mevcut
+Windows ortamından genel HTTPS giriş yolunun erişilebilirliğini doğrular;
+geçerli hesapla giriş, oyun içi karakter görünümü, tüm Windows sürümleri ve
+TLS 1.3 kabulü **NOT RUN**. Özel adres ve deneme kaydı Git'e alınmadı.
+
+Bu uygulama .NET 4 hedefini korur. Modern .NET hedeflerine geçildiğinde
+Microsoft'un işletim sistemi varsayılan protokol seçimi önerisi ayrıca
+değerlendirilmelidir; bu dar düzeltme framework yükseltmesi yapmaz.
+
+Başvuru: [Microsoft .NET Framework TLS rehberi](https://learn.microsoft.com/en-us/dotnet/framework/network-programming/tls),
+[OWASP TLS rehberi](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html),
 [Microsoft yönlendirme politikası](https://learn.microsoft.com/en-us/dotnet/api/system.net.httpwebrequest.allowautoredirect?view=netframework-4.0).

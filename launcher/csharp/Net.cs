@@ -37,7 +37,8 @@ namespace WolfTeamDirilis
         {
             try
             {
-                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
+                // Replace old runtime defaults; OR would keep SSL3/TLS 1.0/TLS 1.1 enabled.
+                ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072;
                 available = true;
             }
             catch (NotSupportedException) { available = false; }

@@ -30,6 +30,27 @@ namespace WolfTeamDirilis.Tests
 
     public static class LauncherTests
     {
+        public static void TestTlsEnableRemovesInheritedLegacyProtocols()
+        {
+            System.Net.SecurityProtocolType previous = System.Net.ServicePointManager.SecurityProtocol;
+            bool wasAvailable = Tls.Available;
+            try
+            {
+                // SSL3 (48), TLS 1.0 (192), TLS 1.1 (768): old runtime defaults must not survive initialization.
+                System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)1008;
+                Tls.Enable();
+                Assert.True(Tls.Available, "TLS 1.2 supported on this test runtime");
+                int protocols = (int)System.Net.ServicePointManager.SecurityProtocol;
+                Assert.Equal(0, protocols & 1008, "no legacy protocol offered by subsequent requests");
+                Assert.Equal(3072, protocols & 3072, "TLS 1.2 remains enabled");
+            }
+            finally
+            {
+                System.Net.ServicePointManager.SecurityProtocol = previous;
+                Tls.SetForTests(wasAvailable);
+            }
+        }
+
         private sealed class LoginRequestProbe : System.Net.IWebRequestCreate
         {
             public int Calls;
