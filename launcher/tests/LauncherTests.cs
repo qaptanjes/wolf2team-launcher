@@ -114,6 +114,101 @@ namespace WolfTeamDirilis.Tests
             }
         }
 
+        public static void TestDownloadsBlockPlaintextAndUserInfoBeforeRequestCreation()
+        {
+            foreach (string prefix in new string[] { "http://download-probe.invalid/", "https://fixture:marker@download-probe.invalid/", "http://fixture:marker@127.0.0.1:9/" })
+            {
+                string url = prefix + Guid.NewGuid().ToString("N") + "/SyntheticPrivatePath";
+                LoginRequestProbe probe = new LoginRequestProbe();
+                Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "download probe registered");
+                Assert.Throws<InvalidOperationException>(delegate { System.Net.WebRequest.Create(new Uri(url)); }, "exact URI intercepted");
+                probe.Calls = 0;
+                Exception failure = null;
+                try { Net.DownloadSmall(url, 1024, 1000); } catch (Exception e) { failure = e; }
+                Assert.Equal(0, probe.Calls, "unsafe download never creates a request");
+                Assert.True(failure is InvalidDataException, "controlled download rejection");
+                Assert.False(failure.Message.Contains("SyntheticPrivatePath") || failure.Message.Contains("marker"), "private values withheld");
+            }
+        }
+
+        public static void TestDownloadsWithoutTlsNeverCreateARequest()
+        {
+            string url = "https://tls-download-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "TLS download probe registered");
+            Tls.SetForTests(false);
+            try
+            {
+                Exception failure = null;
+                try { Net.DownloadSmall(url, 1024, 1000); } catch (Exception e) { failure = e; }
+                Assert.Equal(0, probe.Calls, "no download request without TLS support");
+                Assert.True(failure is InvalidDataException && failure.Message == Tls.MissingText, "controlled TLS failure");
+            }
+            finally { Tls.SetForTests(true); }
+        }
+
+        public static void TestInvalidDownloadAddressesFailSafely()
+        {
+            foreach (string url in new string[] { null, "", "/relative", "file:///C:/SyntheticPrivatePath", "ftp://127.0.0.1/SyntheticPrivatePath" })
+            {
+                Exception failure = null;
+                try { Net.StaticRequest(url, 1000); } catch (Exception e) { failure = e; }
+                Assert.True(failure is InvalidDataException, "unsupported address returns a controlled failure");
+                Assert.False(failure.Message.Contains("SyntheticPrivatePath"), "failure does not disclose the source");
+            }
+        }
+
+        public static void TestNewsAndThumbnailsCannotBypassTheDownloadGuard()
+        {
+            string url = "http://news-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "news probe registered");
+            Exception failure = null;
+            try { News.Fetch(url); } catch (Exception e) { failure = e; }
+            Assert.Equal(0, probe.Calls, "news never sends the private URL over HTTP");
+            Assert.True(failure is InvalidDataException, "news failure is controlled");
+            using (System.Drawing.Image image = News.FetchThumb(url))
+                Assert.True(image == null, "blocked thumbnail is omitted");
+            Assert.Equal(0, probe.Calls, "thumbnail never sends the private URL over HTTP");
+        }
+
+        public static void TestNewsImagesKeepTheSecureOrigin()
+        {
+            string source = "https://news.example.invalid/private/news.json";
+            Assert.Equal("https://news.example.invalid/private/images/a.png", News.ResolveImage(source, "images/a.png"), "relative image");
+            Assert.Equal("https://news.example.invalid/a.png", News.ResolveImage(source, "https://news.example.invalid:443/a.png"), "default HTTPS port");
+            foreach (string target in new string[] { "http://news.example.invalid/a.png", "https://news.example.invalid:444/a.png", "https://other.example.invalid/a.png", "https://fixture:marker@news.example.invalid/a.png", "file:///C:/a.png" })
+                Assert.True(News.ResolveImage(source, target) == null, "image outside secure origin omitted");
+            Assert.True(News.ResolveImage("http://news.example.invalid/private/news.json", "a.png") == null, "insecure news base rejected");
+            Assert.True(News.ResolveImage("https://fixture:marker@news.example.invalid/news.json", "a.png") == null, "userinfo base rejected");
+            Assert.Equal("http://127.0.0.1:8123/pub/a.png", News.ResolveImage("http://127.0.0.1:8123/pub/news.json", "a.png"), "loopback fixture origin");
+            Assert.True(News.ResolveImage("http://127.0.0.1:8123/pub/news.json", "http://127.0.0.1:8124/a.png") == null, "different loopback service rejected");
+        }
+
+        public static void TestSecureRequestsAndLoopbackNewsStillWork()
+        {
+            System.Net.HttpWebRequest request = Net.StaticRequest("https://news.example.invalid/private/news.json", 1234);
+            Assert.False(request.AllowAutoRedirect, "redirect cannot bypass origin policy");
+            Assert.Equal(1234, request.Timeout, "bounded request");
+            request.Abort(); // Request creation only; no public network connection.
+            using (TestHttpServer server = new TestHttpServer())
+            {
+                server.Files["/pub/news.json"] = Encoding.UTF8.GetBytes("[{\"title\":\"Duyuru\",\"date\":\"2026-11-03\",\"text\":\"Test\",\"image\":\"a.png\"}]");
+                using (System.Drawing.Bitmap bitmap = new System.Drawing.Bitmap(4, 4))
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                    server.Files["/pub/a.png"] = stream.ToArray();
+                }
+                List<NewsItem> items = News.Fetch(server.BaseUrl + "news.json");
+                Assert.Equal(1, items.Count, "real news response parsed");
+                Assert.Equal("Duyuru", items[0].Title, "news preserved");
+                using (System.Drawing.Image thumb = News.FetchThumb(items[0].ImageUrl))
+                    Assert.True(thumb != null && thumb.Width == 128 && thumb.Height == 72, "real thumbnail download decoded");
+                Assert.True(server.Connections > 0, "real loopback transport exercised");
+            }
+        }
+
         private static string Sha(byte[] b)
         {
             using (SHA256 s = SHA256.Create()) return Updater.ToHex(s.ComputeHash(b));
@@ -1235,7 +1330,7 @@ namespace WolfTeamDirilis.Tests
             finally { Runner.DeleteTree(dir); }
         }
 
-        public static void TestWithoutTlsOnlyNewsMayFallBack()
+        public static void TestWithoutTlsNoServiceMayFallBack()
         {
             string dir = Runner.TempDir("notls");
             try
@@ -1247,13 +1342,11 @@ namespace WolfTeamDirilis.Tests
                 Tls.SetForTests(false);
                 LauncherConfig c = LauncherConfig.Load(dir, null);
                 Assert.Equal("https://example.org/a/launcher/login", c.LoginUrl, "login never downgrades");
-                Assert.Equal("http://1.2.3.4:8080/s/news.json", c.NewsUrl, "news falls back");
-                Assert.True(c.TlsFallbackUsed, "told");
+                Assert.Equal("https://example.org/d/news.json", c.NewsUrl, "news never downgrades");
+                Assert.False(c.TlsFallbackUsed, "no fallback offered");
                 Assert.False(c.InsecureLogin, "login keeps its secure endpoint");
                 LauncherLog.TlsFallback(c);
-                string log = File.ReadAllText(Path.Combine(BootLayout.LauncherDir(dir), "launcher.log"));
-                Assert.True(log.Contains("TLS 1.2 unavailable") && log.Contains("1.2.3.4:8080"), "news fallback is logged: " + log);
-                Assert.False(log.Contains("/api/") || log.Contains("/s/"), "no URL path in the log");
+                Assert.False(File.Exists(Path.Combine(BootLayout.LauncherDir(dir), "launcher.log")), "no misleading fallback event");
                 Assert.Equal("https://example.org/d/client/", c.UpdateBaseUrl, "the update keeps https");
                 UpdateException e = Assert.Throws<UpdateException>(delegate { new Updater(c).FetchManifest(); }, "no update without TLS");
                 Assert.Equal(Tls.MissingText, e.Message, "the reason");

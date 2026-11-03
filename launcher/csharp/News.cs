@@ -15,7 +15,7 @@ namespace WolfTeamDirilis
         public string Title;
         public string Date;
         public string Text;
-        /// <summary>Absolute URL, already checked to be on the news host; null when none.</summary>
+        /// <summary>Absolute URL, already checked to share the secure news origin; null when none.</summary>
         public string ImageUrl;
         public Image Image;
     }
@@ -89,14 +89,16 @@ namespace WolfTeamDirilis
             return Clean(s, 12);
         }
 
-        /// <summary>Relative to news.json, or absolute http(s) on the same host. Anything else is dropped.</summary>
+        /// <summary>Same HTTPS origin as news.json; loopback HTTP is allowed for development. Anything else is dropped.</summary>
         public static string ResolveImage(string newsUrl, string image)
         {
             if (string.IsNullOrWhiteSpace(image)) return null;
             Uri baseUri, u;
             if (!Uri.TryCreate(newsUrl, UriKind.Absolute, out baseUri)) return null;
+            if (baseUri.UserInfo.Length != 0 || (baseUri.Scheme != Uri.UriSchemeHttps
+                && !(baseUri.Scheme == Uri.UriSchemeHttp && baseUri.IsLoopback))) return null;
             if (!Uri.TryCreate(baseUri, image.Trim(), out u)) return null;
-            if (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) return null;
+            if (u.UserInfo.Length != 0 || u.Scheme != baseUri.Scheme || u.Port != baseUri.Port) return null;
             if (!string.Equals(u.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)) return null;
             return u.AbsoluteUri;
         }

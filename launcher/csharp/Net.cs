@@ -205,7 +205,14 @@ namespace WolfTeamDirilis
 
         public static HttpWebRequest StaticRequest(string url, int timeoutMs)
         {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+            Uri endpoint;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out endpoint) || endpoint.UserInfo.Length != 0
+                || (endpoint.Scheme != Uri.UriSchemeHttps
+                    && !(endpoint.Scheme == Uri.UriSchemeHttp && endpoint.IsLoopback)))
+                throw new InvalidDataException("İndirme adresi güvenli değil (HTTPS gerekli). Adres yönetici tarafından güncellenmeli.");
+            if (endpoint.Scheme == Uri.UriSchemeHttps && !Tls.Available)
+                throw new InvalidDataException(Tls.MissingText);
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(endpoint);
             req.UserAgent = StaticUserAgent;
             req.Timeout = timeoutMs;
             req.ReadWriteTimeout = timeoutMs;
