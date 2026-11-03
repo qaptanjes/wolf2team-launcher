@@ -31,13 +31,6 @@ namespace WolfTeamDirilis
             catch (UnauthorizedAccessException) { }
         }
 
-        /// <summary>The TLS fallbacks of this start, if any (MainForm.OnShown).</summary>
-        public static void TlsFallback(LauncherConfig cfg)
-        {
-            if (!cfg.TlsFallbackUsed) return;
-            Write(cfg.GameDir, "TLS 1.2 unavailable: news use their http address ("
-                + LauncherConfig.HostPort(cfg.NewsUrl) + "); login and updates stay https-only");
-        }
     }
 
     internal static class Handover

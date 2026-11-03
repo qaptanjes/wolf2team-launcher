@@ -116,8 +116,7 @@ namespace WolfTeamDirilis
                 + " NewsUrl=" + LauncherConfig.Redact(cfg.NewsUrl));
             bool https = cfg.UpdateBaseUrl != null && cfg.UpdateBaseUrl.StartsWith("https:", StringComparison.OrdinalIgnoreCase);
             o.WriteLine("[tls]      " + (Tls.Available ? "OK   TLS 1.2 available" : "FAIL TLS 1.2 not available on this PC")
-                + (https ? ", updates over HTTPS" : ", updates over plain HTTP (no launcher\\endpoints.ini)")
-                + (cfg.TlsFallbackUsed ? ", login/news fall back to HTTP" : ""));
+                + (https ? ", updates over HTTPS" : ", public HTTP downloads are blocked"));
             allOk &= Tls.Available;
             BootState boot = null;
             try { boot = BootState.Read(BootLayout.StatePath(cfg.GameDir)); }

@@ -140,11 +140,6 @@ namespace WolfTeamDirilis
             foreach (string n in cfg.LogNotes) LauncherLog.Write(cfg.GameDir, "config: " + n);
             if (Handover.RolledBack)
                 ShowMessage("Başlatıcının yeni sürümü açılamadı; bu sürümle devam ediliyor. Yöneticiye haber ver.", MessageKind.Info);
-            if (cfg.TlsFallbackUsed)
-            {
-                ShowMessage(Tls.MissingText, MessageKind.Info);
-                LauncherLog.TlsFallback(cfg);
-            }
             // With an update address the update brings Wolfteam.bin (a fresh install starts with an empty folder).
             if (cfg.UpdateBaseUrl == null && !File.Exists(cfg.GameExePath))
                 ShowMessage("Wolfteam.bin bulunamadı. Başlatıcıyı oyun klasöründen çalıştır.", MessageKind.Error);
@@ -667,29 +662,16 @@ namespace WolfTeamDirilis
                 passBox.Select();
                 return;
             }
-            if (cfg.InsecureLogin && !insecureLoginAccepted)
+            if (cfg.InsecureLogin)
             {
-                // Security audit F3: the password never goes over plain http silently; only after an explicit yes.
-                DialogResult answer = MessageBox.Show(this, InsecureLoginQuestion, "WolfTeam Diriliş", MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-                if (answer != DialogResult.Yes)
-                {
-                    LauncherLog.Write(cfg.GameDir, "insecure login declined by the player");
-                    ShowMessage(Tls.Available ? "Giriş yapılmadı: giriş bağlantısı şifreli değil ve onay verilmedi."
-                        : Tls.MissingText, MessageKind.Error);
-                    return;
-                }
-                LauncherLog.Write(cfg.GameDir, "insecure (http) login accepted by the player" + (Tls.Available ? "" : ", no TLS 1.2"));
-                insecureLoginAccepted = true;
+                passBox.Clear();
+                ShowMessage(Net.InsecureLoginText, MessageKind.Error);
+                passBox.Select();
+                return;
             }
             strip.Clear();
             DoLogin(user, pass);
         }
-
-        private bool insecureLoginAccepted;
-
-        public const string InsecureLoginQuestion = "Giriş bağlantısı şifreli değil (HTTPS değil). Giriş yaparsan kullanıcı adın ve "
-            + "şifren şifrelenmeden gönderilir ve aynı ağdaki biri görebilir.\n\nYine de şifresiz bağlantıyla giriş yapılsın mı?";
 
         private void DoLogin(string user, string pass)
         {

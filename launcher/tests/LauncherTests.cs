@@ -1071,7 +1071,7 @@ namespace WolfTeamDirilis.Tests
                 Assert.Equal("https://example.org/a/launcher/login", c.LoginUrl, "https login");
                 Assert.Equal("https://example.org/d/client/", c.UpdateBaseUrl, "https update");
                 Assert.Equal("http://1.2.3.4:8080/s/news.json", c.NewsUrl, "an http value in endpoints.ini is ignored (no downgrade)");
-                Assert.False(c.TlsFallbackUsed || c.InsecureLogin, "no fallback, https login");
+                Assert.False(c.InsecureLogin, "https login");
             }
             finally { Tls.SetForTests(true); Runner.DeleteTree(dir); }
         }
@@ -1311,7 +1311,7 @@ namespace WolfTeamDirilis.Tests
             }
         }
 
-        public static void TestAnHttpLoginAddressAlwaysNeedsConsent()
+        public static void TestUnsafeLoginConfigurationIsFlagged()
         {
             // Gate 1.4 #1: an endpoints file with only an https update address leaves the login on http even with TLS 1.2.
             string dir = Runner.TempDir("httplogin");
@@ -1322,10 +1322,14 @@ namespace WolfTeamDirilis.Tests
                 WriteText(BootLayout.EndpointsPath(dir), "UpdateBaseUrl=https://example.org/d/client/\r\n");
                 LauncherConfig c = LauncherConfig.Load(dir, null);
                 Assert.Equal("http://1.2.3.4/api/login.php", c.LoginUrl, "login stays http");
-                Assert.False(c.TlsFallbackUsed, "not a TLS fallback");
-                Assert.True(c.InsecureLogin, "but the player is asked before the password is sent");
+                Assert.True(c.InsecureLogin, "plaintext login must be blocked");
                 WriteText(Path.Combine(dir, LauncherConfig.FileName), "LoginUrl=http://127.0.0.1:9/api/login.php\r\n");
-                Assert.False(LauncherConfig.Load(dir, null).InsecureLogin, "this PC (tests) needs no consent");
+                Assert.False(LauncherConfig.Load(dir, null).InsecureLogin, "local test transport allowed");
+                foreach (string address in new string[] { "https://fixture:marker@example.invalid/login", "ftp://127.0.0.1/login", "/relative", "", null })
+                {
+                    c.LoginUrl = address;
+                    Assert.True(c.InsecureLogin, "UI must flag every unsafe login endpoint");
+                }
             }
             finally { Runner.DeleteTree(dir); }
         }
@@ -1343,10 +1347,7 @@ namespace WolfTeamDirilis.Tests
                 LauncherConfig c = LauncherConfig.Load(dir, null);
                 Assert.Equal("https://example.org/a/launcher/login", c.LoginUrl, "login never downgrades");
                 Assert.Equal("https://example.org/d/news.json", c.NewsUrl, "news never downgrades");
-                Assert.False(c.TlsFallbackUsed, "no fallback offered");
                 Assert.False(c.InsecureLogin, "login keeps its secure endpoint");
-                LauncherLog.TlsFallback(c);
-                Assert.False(File.Exists(Path.Combine(BootLayout.LauncherDir(dir), "launcher.log")), "no misleading fallback event");
                 Assert.Equal("https://example.org/d/client/", c.UpdateBaseUrl, "the update keeps https");
                 UpdateException e = Assert.Throws<UpdateException>(delegate { new Updater(c).FetchManifest(); }, "no update without TLS");
                 Assert.Equal(Tls.MissingText, e.Message, "the reason");
@@ -1438,6 +1439,8 @@ namespace WolfTeamDirilis.Tests
                     "Önceki güncelleme yarım kaldı ve güncelleme listesi alınamadı. Oyun bu hâliyle açılamaz; bağlantını kontrol edip Tekrar dene'ye bas.",
                     "Hesabın yasaklı (bitiş: 2026-10-01T10:00 UTC: hile ve küfür nedeniyle, itiraz için yöneticiye yaz).",
                     "Kullanıcı adını yaz.",
+                    Net.InsecureLoginText,
+                    Tls.MissingText,
                 };
                 foreach (string t in texts)
                 {

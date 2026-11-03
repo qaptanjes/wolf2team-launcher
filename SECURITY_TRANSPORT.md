@@ -50,12 +50,9 @@ Content-Length için yakalanan IOException kullanması önerisi uygulandı.
 
 ## Yayından önce kalanlar
 
-1. `MainForm` içindeki eski şifresiz giriş onayını kaldırıp, güvenli hata
-   mesajıyla eşleştirmek; klavye ve mesaj görünürlüğünü kontrol etmek.
-2. Kullanılmayan eski TLS fallback UI/günlük bağlantılarını temizlemek.
-3. Son kaynak için Windows CI ve imzasız hazırlık artifact kontrollerini
+1. Son kaynak için Windows CI ve imzasız hazırlık artifact kontrollerini
    tamamlamak; bu deponun hazırlık çıktıları oyuncu sürümü değildir.
-4. Canlı launcher dağıtımı ayrı doğrulanmalı; mevcut oyuncu kurulumları
+2. Canlı launcher dağıtımı ayrı doğrulanmalı; mevcut oyuncu kurulumları
    bu kaynak değişikliğiyle kendiliğinden güncellenmiş sayılmaz. Eski sunucu
    HTTP ucunun kaldırılması güncel launcher geçişiyle birlikte ele alınmalı.
 
@@ -109,6 +106,48 @@ endpoint 30 ve paketleme ön kontrolü 15; toplam **198 başarılı, sıfır hat
 Bağımsız inceleme altı yeni test ile değişen TLS regresyonunu derlenmiş
 çıktıda tekrar çalıştırdı: 7/7 başarılı, engelleyici bulgu yok. Gerçek TLS
 el sıkışması ve canlı haber servisi bu yerel testlerin kapsamında değildir.
+
+## Güvensiz giriş arayüzü
+
+Eski HTTP onay penceresi ve kabul durumu kaldırıldı. Güvensiz adresle
+giriş denenince parola temizlenir, mevcut Türkçe HTTPS hata metni görünür
+ve odak parola alanına döner. `InsecureLogin` artık userinfo içeren HTTPS
+ve loopback FTP gibi yanlış adresleri de işaretler. Önceki derlemede bu iki
+adres yanlışlıkla güvenli sayılıyordu; istek katmanındaki kontrol ise zaten
+gönderimi engelliyordu. Artık UI ve istek katmanı aynı politikayı uygular.
+Kullanılmayan TLS geri dönüşü alanı, yöntemi ve günlük ifadeleri temizlendi.
+
+Tam kaynak testleri yine 198/198 başarılı. Ardından yalnız ekran kontrolüne
+eklenen klavye/erişilebilirlik assertion'ları güncel kaynakla ayrı derlenip
+çalıştırıldı. `LauncherScreens` parola alanındaki Enter ve başlat düğmesindeki
+Space olayını gerçek kontrol işleyicisine iletir; parolanın temizlenmesi,
+hata metni, erişilebilir ad ve aktif kontrolü denetler. Bunlar fiziksel tuş
+basımı veya oyun içi test değildir. İki hata ekranı 1020×666 boyutunda
+üretilip görsel olarak incelendi; metinler mevcut şeride sığıyor. Yerel ekran
+görüntüleri ve özel oyun varlıkları Git'e veya CI artifact'ına eklenmedi.
+Bağımsız kod incelemesinde engelleyici bulgu yok. Küçük test önerisi uygulandı:
+her kısayol öncesinde giriş kontrolü seçilir ve aktif olduğu doğrulanır;
+böylece Space denemesinin odağı gerçekten başlat düğmesinden parolaya
+döndürdüğü kanıtlanır. Güncel ekran/klavye koşusu yeniden başarılıdır.
+
+| UI kontrolü | Sonuç | Kanıt / sınır |
+| --- | --- | --- |
+| Enter/Space, hata metni, parola temizleme, aktif kontrol | PASS | Kontrol olayları ile ekran kontrolü; fiziksel klavye testi değil |
+| Erişilebilir hata adı | PASS | `AccessibleName` gösterilen hatayla aynı |
+| Hata metni kontrastı | PASS | `#F2ECE4`, alfa 200 siyah zemin: en parlak olası arka planda hesaplanan alt sınır 10,14:1 |
+| Metin taşması | PASS | Font ölçüm testi ve iki güncel hata görüntüsünün incelenmesi |
+| Tam Tab/Shift+Tab/Escape, ekran okuyucu, görünür odak | NOT RUN | Bu tur tam masaüstü erişilebilirlik kabulü yapılmadı |
+| 320–1920 CSS px responsive | N/A | Web bileşeni değil; mevcut sabit 1020×666 Windows Forms penceresi korunuyor |
+| Yüksek DPI ve farklı masaüstü çözünürlükleri | NOT RUN | Yalnız mevcut render ortamı kontrol edildi |
+| Dark mode | N/A | Mevcut tek temalı başlatıcı; tema değişikliği yok |
+| prefers-reduced-motion | N/A | Bu değişiklik animasyonsuz native hata akışı; genel hareket politikası değerlendirilmedi |
+| TypeScript strict / web lazy-sizes / CWV | N/A | C# uygulaması; yeni web bundle veya asset yok |
+| C# derleme | PASS | Mevcut C# 5 derleyicisi, warning-as-error; yeni bağımlılık yok |
+
+10K kaynaklarının sinematik üretim ve web mimarisi aşamaları bu native hata
+düzeltmesine uygulanmaz; entegrasyon girişindeki görev kapsamını koruma
+kuralı kullanıldı. Okunabilirlik ve ölçülmeyen kontrolü başarılı saymama
+ilkeleri uygulandı.
 
 Başvuru: [OWASP TLS rehberi](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html),
 [Microsoft yönlendirme politikası](https://learn.microsoft.com/en-us/dotnet/api/system.net.httpwebrequest.allowautoredirect?view=netframework-4.0).
