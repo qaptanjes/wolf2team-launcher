@@ -35,8 +35,8 @@ namespace WolfTeamDirilis
         public static void TlsFallback(LauncherConfig cfg)
         {
             if (!cfg.TlsFallbackUsed) return;
-            Write(cfg.GameDir, "TLS 1.2 unavailable: " + (cfg.InsecureLogin ? "login (only after the player's yes) and " : "")
-                + "news use their http address (" + LauncherConfig.HostPort(cfg.LoginUrl) + "); updates stay https-only");
+            Write(cfg.GameDir, "TLS 1.2 unavailable: news use their http address ("
+                + LauncherConfig.HostPort(cfg.NewsUrl) + "); login and updates stay https-only");
         }
     }
 

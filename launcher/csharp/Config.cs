@@ -3,8 +3,8 @@
 //
 // HTTPS (security audit F2/F3): an https LoginUrl / UpdateBaseUrl / NewsUrl from endpoints.ini (only https values are
 // taken from it) or from WolfTeamDirilis.ini wins over an http one. Without TLS 1.2 on the PC (Tls.Available false) the
-// login and the news fall back to the http address of WolfTeamDirilis.ini, and the player is told (TlsFallbackUsed); the
-// update never does: its list must come from an authentic source, so it fails instead (the offline rule still applies).
+// news may fall back to the http address of WolfTeamDirilis.ini (TlsFallbackUsed). Login and updates never downgrade:
+// Net.Login refuses public HTTP before constructing a request; updates retain their existing offline-play rule.
 //
 // ServerHost (the game server the status badge probes; launcher 1.6.1): endpoints.ini's ServerHost wins over the one in
 // WolfTeamDirilis.ini, then DefaultServerHost. The retired address RetiredServerHost (the server moved on 2026-10-02;
@@ -95,7 +95,7 @@ namespace WolfTeamDirilis
                 if (Get(kv, "LoginUrl").Length > 0) c.Warnings.Add("LoginUrl geçersiz; varsayılan kullanılıyor.");
                 login = "http://" + c.ServerHost + "/api/login.php";
             }
-            c.LoginUrl = c.Pick(HttpsUrlOrNull(Get(ep, "LoginUrl")), login, true);
+            c.LoginUrl = c.Pick(HttpsUrlOrNull(Get(ep, "LoginUrl")), login, false);
 
             string update = HttpUrlOrNull(Get(kv, "UpdateBaseUrl"));
             if (update == null && Get(kv, "UpdateBaseUrl").Length > 0) c.Warnings.Add("UpdateBaseUrl geçersiz; güncelleme kapalı.");

@@ -34,6 +34,8 @@ namespace WolfTeamDirilis.Tests
         public int Connections;
         /// <summary>Body bytes sent in total.</summary>
         public long BytesSent;
+        public volatile string LastMethod;
+        public volatile string LastBody;
         private readonly List<TcpClient> open = new List<TcpClient>();
 
         public TestHttpServer()
@@ -87,9 +89,15 @@ namespace WolfTeamDirilis.Tests
             string first = r.ReadLine();
             if (first == null) return false;
             long from = -1, to = -1;
+            int contentLength = 0;
             string line;
             while (!string.IsNullOrEmpty(line = r.ReadLine()))
             {
+                if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!int.TryParse(line.Substring(15).Trim(), out contentLength) || contentLength < 0 || contentLength > 8192)
+                        throw new IOException("fixture request body too large");
+                }
                 if (line.StartsWith("Range: bytes=", StringComparison.OrdinalIgnoreCase))
                 {
                     string[] ft = line.Substring(13).Split('-');
@@ -97,6 +105,15 @@ namespace WolfTeamDirilis.Tests
                     if (ft.Length > 1 && ft[1].Length > 0) to = long.Parse(ft[1]);
                 }
             }
+            char[] requestBody = new char[contentLength];
+            for (int read = 0; read < contentLength; )
+            {
+                int got = r.Read(requestBody, read, contentLength - read);
+                if (got == 0) throw new IOException("fixture request body truncated");
+                read += got;
+            }
+            LastMethod = first.Split(' ')[0];
+            LastBody = new string(requestBody); // form body is ASCII percent-encoded in these fixtures
             if (IgnoreRange) from = to = -1;
             string target = first.Split(' ')[1];
             int q = target.IndexOf('?');

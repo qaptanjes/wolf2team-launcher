@@ -3,7 +3,7 @@ name: Windows unsigned preparation
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'codex/signpath-*']
+    branches: [main, jesus, 'codex/signpath-*']
     paths: ['launcher/**', 'ops/**', '.github/workflows/windows-unsigned.yml', 'CODE_SIGNING_POLICY.md']
   pull_request:
     paths: ['launcher/**', 'ops/**', '.github/workflows/windows-unsigned.yml', 'CODE_SIGNING_POLICY.md']

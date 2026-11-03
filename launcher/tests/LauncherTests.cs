@@ -30,6 +30,90 @@ namespace WolfTeamDirilis.Tests
 
     public static class LauncherTests
     {
+        private sealed class LoginRequestProbe : System.Net.IWebRequestCreate
+        {
+            public int Calls;
+            public System.Net.WebRequest Create(Uri uri)
+            {
+                Calls++;
+                throw new InvalidOperationException("request creation probe");
+            }
+        }
+
+        public static void TestHttpLoginNeverCreatesARequest()
+        {
+            string url = "http://login-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "probe registered");
+            LoginResult result = null;
+            try { result = Net.Login(url, "fixture", "fixture-password"); }
+            catch (InvalidOperationException) { }
+            Assert.Equal(0, probe.Calls, "no request before refusing plaintext credentials");
+            Assert.True(result != null && !result.Ok && result.Token == null, "safe failure");
+            Assert.True(result.Error.Contains("HTTPS"), "actionable Turkish error");
+        }
+
+        public static void TestHttpsLoginWithoutTlsNeverCreatesARequest()
+        {
+            string url = "https://login-probe.invalid/" + Guid.NewGuid().ToString("N") + "/";
+            LoginRequestProbe probe = new LoginRequestProbe();
+            Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "probe registered");
+            Tls.SetForTests(false);
+            try
+            {
+                LoginResult result = null;
+                try { result = Net.Login(url, "fixture", "fixture-password"); }
+                catch (InvalidOperationException) { }
+                Assert.Equal(0, probe.Calls, "no request without supported TLS");
+                Assert.True(result != null && !result.Ok && result.Token == null, "safe failure");
+                Assert.Equal(Tls.MissingText, result.Error, "TLS repair message");
+            }
+            finally { Tls.SetForTests(true); }
+        }
+
+        public static void TestInvalidLoginAddressesReturnAnErrorBeforeIo()
+        {
+            foreach (string url in new string[] { null, "", "/relative", "mailto:fixture@example.invalid", "ftp://127.0.0.1/x" })
+            {
+                LoginResult result = null;
+                try { result = Net.Login(url, "fixture", "fixture-password"); }
+                catch (Exception) { }
+                Assert.True(result != null && !result.Ok && result.Token == null && !string.IsNullOrEmpty(result.Error),
+                    "invalid endpoint fails without throwing or creating an I/O request");
+            }
+        }
+
+        public static void TestLoginUserInfoIsRejectedBeforeRequestCreation()
+        {
+            foreach (string host in new string[] { "https://userinfo-probe.invalid/", "http://127.0.0.1:9/" })
+            {
+                string url = host.Replace("://", "://fixture:marker@") + Guid.NewGuid().ToString("N") + "/";
+                LoginRequestProbe probe = new LoginRequestProbe();
+                Assert.True(System.Net.WebRequest.RegisterPrefix(url, probe), "userinfo probe registered");
+                // Calibrate the exact URI seam without connecting anywhere. Removing the guard must hit this probe.
+                Assert.Throws<InvalidOperationException>(delegate { System.Net.WebRequest.Create(new Uri(url)); }, "probe intercepts URI");
+                Assert.Equal(1, probe.Calls, "calibration reached request factory");
+                probe.Calls = 0;
+                LoginResult result = Net.Login(url, "fixture", "fixture-password");
+                Assert.Equal(0, probe.Calls, "userinfo never reaches request factory");
+                Assert.True(!result.Ok && result.Token == null && result.Error.Contains("HTTPS"), "safe failure");
+            }
+        }
+
+        public static void TestLoopbackLoginStillUsesTheRealHttpPath()
+        {
+            using (TestHttpServer server = new TestHttpServer())
+            {
+                server.Files["/pub/login"] = Encoding.UTF8.GetBytes("{\"ok\":true,\"token\":\"0123456789abcdef0123456789abcdef\"}");
+                LoginResult result = Net.Login(server.BaseUrl + "login", "fixture user", "fixture+&password");
+                Assert.True(result.Ok, "loopback fixture login succeeds");
+                Assert.Equal("0123456789abcdef0123456789abcdef", result.Token, "response parsed");
+                Assert.True(server.Connections > 0, "real loopback connection exercised");
+                Assert.Equal("POST", server.LastMethod, "login method preserved");
+                Assert.Equal("user=fixture%20user&pass=fixture%2B%26password", server.LastBody, "credential form is encoded");
+            }
+        }
+
         private static string Sha(byte[] b)
         {
             using (SHA256 s = SHA256.Create()) return Updater.ToHex(s.ComputeHash(b));
@@ -1151,7 +1235,7 @@ namespace WolfTeamDirilis.Tests
             finally { Runner.DeleteTree(dir); }
         }
 
-        public static void TestWithoutTlsLoginAndNewsFallBackButTheUpdateNever()
+        public static void TestWithoutTlsOnlyNewsMayFallBack()
         {
             string dir = Runner.TempDir("notls");
             try
@@ -1162,13 +1246,13 @@ namespace WolfTeamDirilis.Tests
                     + "UpdateBaseUrl=https://example.org/d/client/\r\nNewsUrl=https://example.org/d/news.json\r\n");
                 Tls.SetForTests(false);
                 LauncherConfig c = LauncherConfig.Load(dir, null);
-                Assert.Equal("http://1.2.3.4/api/login.php", c.LoginUrl, "login falls back (the player is told)");
+                Assert.Equal("https://example.org/a/launcher/login", c.LoginUrl, "login never downgrades");
                 Assert.Equal("http://1.2.3.4:8080/s/news.json", c.NewsUrl, "news falls back");
                 Assert.True(c.TlsFallbackUsed, "told");
-                Assert.True(c.InsecureLogin, "the password is not sent without the player's yes (MainForm.OnStart)");
+                Assert.False(c.InsecureLogin, "login keeps its secure endpoint");
                 LauncherLog.TlsFallback(c);
                 string log = File.ReadAllText(Path.Combine(BootLayout.LauncherDir(dir), "launcher.log"));
-                Assert.True(log.Contains("TLS 1.2 unavailable") && log.Contains("1.2.3.4:80"), "the fallback is logged: " + log);
+                Assert.True(log.Contains("TLS 1.2 unavailable") && log.Contains("1.2.3.4:8080"), "news fallback is logged: " + log);
                 Assert.False(log.Contains("/api/") || log.Contains("/s/"), "no URL path in the log");
                 Assert.Equal("https://example.org/d/client/", c.UpdateBaseUrl, "the update keeps https");
                 UpdateException e = Assert.Throws<UpdateException>(delegate { new Updater(c).FetchManifest(); }, "no update without TLS");
